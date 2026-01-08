@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inventario de Ambulancia</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="print.css" media="print" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">🚑</div>
+        <div>
+          <div class="title">Ambulancias</div>
+          <div class="subtitle">Inventario · Mecánica · Expediente</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="navBtn active" data-view="inventario">📦 Inventario</button>
+        <button class="navBtn" data-view="mecanica">🛠️ Revisión mecánica</button>
+        <button class="navBtn" data-view="expediente">🗂️ Expediente</button>
+      </nav>
+
+      <div class="sideActions">
+        <button id="btnNuevo" class="btn">➕ Nuevo</button>
+        <button id="btnGuardar" class="btn primary">💾 Guardar</button>
+        <button id="btnImprimir" class="btn">🖨️ Imprimir / PDF</button>
+        <button id="btnExportar" class="btn">⬇️ Exportar JSON</button>
+        <label class="fileBtn btn">
+          ⬆️ Importar JSON
+          <input id="fileImport" type="file" accept="application/json" />
+        </label>
+      </div>
+
+      <div class="saved">
+        <div class="savedHeader">
+          <div class="savedTitle">Registros guardados</div>
+          <button id="btnRefresh" class="linkBtn">Actualizar</button>
+        </div>
+        <div id="savedList" class="savedList"></div>
+      </div>
+
+      <div class="hint">
+        <div class="hintTitle">Tip</div>
+        <div class="hintText">Si ves “página en blanco” en GitHub Pages, casi siempre era un archivo vacío o un error en consola. Este paquete ya trae todo completo.</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topLeft">
+          <div class="h1" id="viewTitle">📦 Inventario de ambulancia</div>
+          <div class="h2" id="viewSub">Formulario editable. Guarda localmente en el navegador.</div>
+        </div>
+        <div class="topRight">
+          <div class="pill" id="statusPill">Listo</div>
+        </div>
+      </header>
+
+      <!-- INVENTARIO -->
+      <section class="view" id="view-inventario">
+        <div class="card">
+          <div class="cardTitle">Datos generales</div>
+          <div class="grid">
+            <label>Unidad / Placa
+              <input data-bind="inv.unidad" placeholder="Ej: A-12 / ABC123" />
+            </label>
+            <label>Fecha
+              <input data-bind="inv.fecha" type="date" />
+            </label>
+            <label>Responsable
+              <input data-bind="inv.responsable" placeholder="Nombre" />
+            </label>
+            <label>Turno
+              <select data-bind="inv.turno">
+                <option value="">--</option>
+                <option>Mañana</option>
+                <option>Tarde</option>
+                <option>Noche</option>
+              </select>
+            </label>
+            <label class="col2">Observaciones
+              <input data-bind="inv.obs" placeholder="Notas generales del inventario" />
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Checklist de inventario</div>
+          <div class="tableActions">
+            <button class="btn" id="invAddRow">➕ Agregar fila</button>
+            <button class="btn danger" id="invClear">🧹 Limpiar tabla</button>
+          </div>
+          <div class="tableWrap">
+            <table class="tbl" id="invTable">
+              <thead>
+                <tr>
+                  <th>Ítem</th>
+                  <th>Cantidad</th>
+                  <th>Estado</th>
+                  <th>Vencimiento</th>
+                  <th>Notas</th>
+                  <th class="w-min">✖</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="muted">Ejemplos: Guantes, Gasas, Mascarillas, Oxímetro, Collarín, Kit vía aérea, etc.</div>
+        </div>
+      </section>
+
+      <!-- MECANICA -->
+      <section class="view hidden" id="view-mecanica">
+        <div class="card">
+          <div class="cardTitle">Datos del vehículo</div>
+          <div class="grid">
+            <label>Unidad / Placa
+              <input data-bind="mec.unidad" placeholder="Ej: A-12 / ABC123" />
+            </label>
+            <label>Fecha
+              <input data-bind="mec.fecha" type="date" />
+            </label>
+            <label>Kilometraje
+              <input data-bind="mec.km" type="number" min="0" placeholder="0" />
+            </label>
+            <label>Técnico / Responsable
+              <input data-bind="mec.tecnico" placeholder="Nombre" />
+            </label>
+            <label class="col2">Estado general
+              <select data-bind="mec.estado">
+                <option value="">--</option>
+                <option>Óptimo</option>
+                <option>Operativo con observaciones</option>
+                <option>No operativo</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Checklist mecánico</div>
+          <div class="checkGrid" id="mecChecks"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Hallazgos y recomendaciones</div>
+          <textarea data-bind="mec.hallazgos" rows="7" placeholder="Escribí aquí..."></textarea>
+        </div>
+      </section>
+
+      <!-- EXPEDIENTE -->
+      <section class="view hidden" id="view-expediente">
+        <div class="tabs">
+          <button class="tabBtn active" data-tab="run">Hoja 1: Run Report</button>
+          <button class="tabBtn" data-tab="vitals">Hoja 2: Vital Signs</button>
+        </div>
+
+        <div class="tabPanel" id="tab-run">
+          <div class="card">
+            <div class="cardTitle">Run Report (resumen digitizable)</div>
+            <div class="grid">
+              <label>Fecha
+                <input data-bind="exp.run.fecha" type="date" />
+              </label>
+              <label>Paciente
+                <input data-bind="exp.run.paciente" placeholder="Nombre" />
+              </label>
+              <label>Edad
+                <input data-bind="exp.run.edad" type="number" min="0" placeholder="0" />
+              </label>
+              <label>Sexo
+                <select data-bind="exp.run.sexo">
+                  <option value="">--</option>
+                  <option>F</option>
+                  <option>M</option>
+                  <option>Otro</option>
+                </select>
+              </label>
+              <label class="col2">Diagnóstico / Motivo
+                <input data-bind="exp.run.dx" placeholder="Ej: Trauma..." />
+              </label>
+              <label class="col2">Nota / Historia
+                <input data-bind="exp.run.nota" placeholder="Descripción breve..." />
+              </label>
+            </div>
+            <div class="muted">Esto no reemplaza tu formato oficial, es para tenerlo claro y editable en web.</div>
+          </div>
+        </div>
+
+        <div class="tabPanel hidden" id="tab-vitals">
+          <div class="card">
+            <div class="cardTitle">Encabezado</div>
+            <div class="grid">
+              <label>Flight #
+                <input data-bind="exp.vs.flight" />
+              </label>
+              <label>Paciente
+                <input data-bind="exp.vs.paciente" />
+              </label>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="cardTitle">Vital Signs</div>
+            <div class="tableActions">
+              <button class="btn" id="vsAddRow">➕ Agregar fila</button>
+              <button class="btn danger" id="vsClear">🧹 Limpiar tabla</button>
+            </div>
+            <div class="tableWrap">
+              <table class="tbl" id="vsTable">
+                <thead>
+                  <tr>
+                    <th>Time</th><th>HR</th><th>Rhythm</th><th>BP</th><th>MAP</th><th>RR</th><th>SpO₂</th><th>ETCO₂</th><th>Temp</th><th>Pain</th><th>GCS</th><th>V. Tidal</th><th>Rate</th><th>PEEP</th><th class="w-min">✖</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="cardTitle">Pre-flight Medications</div>
+            <div class="tableWrap">
+              <table class="tbl" id="medTable">
+                <thead>
+                  <tr>
+                    <th>Time</th><th>Medication</th><th>Concentration</th><th>Dose</th><th>Route</th><th>Outcome/Result</th><th class="w-min">✖</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="tableActions">
+              <button class="btn" id="medAddRow">➕ Agregar fila</button>
+              <button class="btn danger" id="medClear">🧹 Limpiar tabla</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="cardTitle">Flight Progress Note</div>
+            <textarea data-bind="exp.vs.note" rows="8" placeholder="Escribí aquí..."></textarea>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div>Hecho para: Inventario de ambulancia · Revisión mecánica · Expediente.</div>
+        <div class="muted">Todo local (sin servidor). Para multi‑cliente y BD, se agrega backend.</div>
+      </footer>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

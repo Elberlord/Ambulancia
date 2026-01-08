@@ -1,0 +1,14 @@
+/* Print styles: keep it clean for PDF */
+@page { margin: 12mm; }
+body{ background:#fff !important; color:#000 !important; }
+.sidebar, .toast { display:none !important; }
+.main{ max-width: none !important; padding:0 !important; margin:0 !important; }
+.card{
+  box-shadow:none !important;
+  background:#fff !important;
+  border:1px solid #ddd !important;
+}
+.tbl th{ position:static !important; background:#f6f6f6 !important; color:#000 !important; }
+.grid input, .grid select, textarea, .tbl td input{
+  background:#fff !important; color:#000 !important; border:1px solid #ccc !important;
+}

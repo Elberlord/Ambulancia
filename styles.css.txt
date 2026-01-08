@@ -1,0 +1,219 @@
+/* Base */
+:root{
+  --bg:#0b1020;
+  --panel:#0f1730;
+  --panel2:#0c1329;
+  --text:#e8ecff;
+  --muted:#a8b0d6;
+  --line:rgba(255,255,255,.10);
+  --accent:#62d0ff;
+  --accent2:#7cffb8;
+  --danger:#ff6b6b;
+  --shadow:0 10px 30px rgba(0,0,0,.35);
+  --radius:18px;
+  --radius2:12px;
+  --font: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:var(--font);
+  color:var(--text);
+  background: radial-gradient(900px 500px at 20% 10%, rgba(98,208,255,.18), transparent 55%),
+              radial-gradient(700px 400px at 90% 25%, rgba(124,255,184,.12), transparent 55%),
+              linear-gradient(180deg, var(--bg), #070a14);
+}
+
+.app{min-height:100%; display:flex}
+.sidebar{
+  width:320px;
+  padding:16px;
+  background: linear-gradient(180deg, rgba(15,23,48,.95), rgba(12,19,41,.92));
+  border-right:1px solid var(--line);
+  position:sticky;
+  top:0;
+  height:100vh;
+  overflow:auto;
+}
+.brand{display:flex; gap:12px; align-items:center; padding:10px 10px 14px 10px}
+.logo{
+  width:44px; height:44px; display:grid; place-items:center;
+  border-radius:14px;
+  background: rgba(98,208,255,.15);
+  border:1px solid var(--line);
+}
+.title{font-weight:800; letter-spacing:.3px}
+.subtitle{font-size:12px; color:var(--muted)}
+
+.nav{display:grid; gap:8px; padding:6px 8px 14px}
+.navBtn{
+  all:unset;
+  cursor:pointer;
+  padding:12px 12px;
+  border-radius:14px;
+  background: rgba(255,255,255,.04);
+  border:1px solid var(--line);
+  transition:transform .08s ease, background .2s ease, border-color .2s ease;
+}
+.navBtn:hover{transform:translateY(-1px); background: rgba(255,255,255,.06)}
+.navBtn.active{
+  background: rgba(98,208,255,.14);
+  border-color: rgba(98,208,255,.45);
+}
+
+.sideActions{display:grid; gap:8px; padding:0 8px 16px}
+.btn{
+  cursor:pointer;
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.04);
+  color:var(--text);
+  padding:10px 12px;
+  border-radius:14px;
+  box-shadow:none;
+}
+.btn:hover{background: rgba(255,255,255,.06)}
+.btn.primary{background: rgba(124,255,184,.12); border-color: rgba(124,255,184,.35)}
+.btn.danger{background: rgba(255,107,107,.10); border-color: rgba(255,107,107,.30)}
+.fileBtn{display:flex; align-items:center; justify-content:center; gap:8px}
+.fileBtn input{display:none}
+
+.saved{margin-top:6px; padding:10px 8px 14px}
+.savedHeader{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px}
+.savedTitle{font-weight:700; font-size:13px; color:var(--muted)}
+.linkBtn{all:unset; cursor:pointer; color:var(--accent); font-size:13px}
+.savedList{display:grid; gap:8px}
+.savedItem{
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background: rgba(255,255,255,.03);
+}
+.savedItemTop{display:flex; justify-content:space-between; gap:10px; align-items:center}
+.savedName{font-weight:700}
+.savedMeta{font-size:12px; color:var(--muted); margin-top:4px}
+.savedActions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap}
+.savedActions .btn{padding:8px 10px; border-radius:12px}
+
+.hint{
+  margin:14px 8px 0;
+  padding:12px;
+  border-radius:14px;
+  border:1px dashed rgba(98,208,255,.35);
+  background: rgba(98,208,255,.06);
+}
+.hintTitle{font-weight:800; font-size:13px}
+.hintText{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.3}
+
+.main{flex:1; padding:18px; max-width:1100px; margin:0 auto; width:100%}
+.topbar{
+  display:flex; justify-content:space-between; align-items:flex-start;
+  gap:12px; margin-bottom:14px
+}
+.h1{font-size:20px; font-weight:900}
+.h2{font-size:13px; color:var(--muted); margin-top:4px}
+.pill{
+  padding:8px 10px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.04);
+  font-size:12px;
+}
+
+.card{
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.03);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding:14px;
+  margin-bottom:14px;
+}
+.cardTitle{font-weight:900; margin-bottom:10px; letter-spacing:.2px}
+
+.grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:10px;
+}
+.grid label{display:grid; gap:6px; font-size:12px; color:var(--muted)}
+.grid input, .grid select, textarea{
+  width:100%;
+  padding:10px 10px;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background: rgba(15,23,48,.65);
+  color: var(--text);
+  outline:none;
+}
+textarea{resize:vertical}
+.grid .col2{grid-column:1 / -1}
+
+.tableWrap{overflow:auto; border-radius:14px; border:1px solid var(--line)}
+.tbl{width:100%; border-collapse:collapse; min-width:860px}
+.tbl th,.tbl td{border-bottom:1px solid var(--line); padding:8px}
+.tbl th{font-size:12px; color:var(--muted); text-align:left; background: rgba(255,255,255,.03); position:sticky; top:0}
+.tbl td input{
+  width:100%;
+  padding:8px 8px;
+  border-radius:12px;
+  border:1px solid var(--line);
+  background: rgba(15,23,48,.55);
+  color:var(--text);
+}
+.w-min{width:46px}
+.xBtn{
+  cursor:pointer;
+  border:1px solid rgba(255,107,107,.35);
+  background: rgba(255,107,107,.10);
+  color: var(--text);
+  border-radius:12px;
+  padding:6px 10px;
+}
+
+.tableActions{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px}
+.muted{color:var(--muted); font-size:12px; margin-top:10px; line-height:1.35}
+
+.checkGrid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:10px;
+}
+.check{
+  display:flex; align-items:flex-start; gap:10px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background: rgba(15,23,48,.35);
+}
+.check input{margin-top:3px}
+.check .label{font-weight:800}
+.check .desc{font-size:12px; color:var(--muted); margin-top:2px}
+
+.tabs{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap}
+.tabBtn{
+  all:unset; cursor:pointer;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.04);
+}
+.tabBtn.active{background: rgba(98,208,255,.14); border-color: rgba(98,208,255,.45)}
+
+.hidden{display:none}
+.footer{padding:14px 4px 24px; color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap}
+
+.toast{
+  position:fixed;
+  right:14px;
+  bottom:14px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background: rgba(0,0,0,.6);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font-size:12px;
+  display:none;
+  max-width:360px;
+}
