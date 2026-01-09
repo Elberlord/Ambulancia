@@ -10,6 +10,7 @@ import {
   onAuthStateChanged,
   signOut,
   setPersistence,
+  browserSessionPersistence,
   inMemoryPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 import {
@@ -30,6 +31,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// ✅ Evita que Firebase te deje "logueado" por días.
+// Con esto, si cierras el navegador o la WebView, pedirá credenciales otra vez.
+// (En un refresh de la misma pestaña puede mantener sesión, lo cual es normal.)
+setPersistence(auth, browserSessionPersistence).catch(() => {});
 
 // Secondary auth (para crear usuarios sin cerrar la sesión del admin)
 const secondaryApp = initializeApp(firebaseConfig, "secondary");
@@ -106,7 +112,7 @@ function applyPermissions(){
   // Always allow: logout/back/nav/tabs/refresh/export
   const allowIds = new Set([
     "btnLogout","btnBack",
-    "navInventario","navMecanica","navExpediente","navUsuarios",
+    "navInventario","navMecanica","navExpediente","navUsuarios","navUsers",
     "tabRun","tabVitals",
     "btnRefresh","btnExport","search",
     "btnUsersRefresh"
@@ -283,7 +289,9 @@ onAuthStateChanged(auth, async (user) => {
 $("navInventario").addEventListener("click", async () => { await preNavSave(); goSection("inventario"); });
 $("navMecanica").addEventListener("click", async () => { await preNavSave(); goSection("mecanica"); });
 $("navExpediente").addEventListener("click", async () => { await preNavSave(); goSection("expediente"); });
-$("navUsuarios").addEventListener("click", async () => { await preNavSave(); goSection("usuarios"); });
+// Compatibilidad: botón puede llamarse navUsuarios o navUsers en el HTML
+(document.getElementById("navUsuarios") || document.getElementById("navUsers"))
+  ?.addEventListener("click", async () => { await preNavSave(); goSection("usuarios"); });
 
 async function preNavSave(){
   if(dirty && canEdit()) await saveCurrentRecord(true);
