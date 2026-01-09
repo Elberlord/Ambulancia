@@ -65,12 +65,12 @@
         <h3>Registros</h3>
 
         <div class="row wrap">
-          <button id="btnNew" class="secondary" type="button" data-permission="add">➕ Nuevo</button>
-          <button id="btnSave" class="primary" type="button" data-permission="add">💾 Guardar</button>
-          <button id="btnExport" class="secondary" type="button" data-permission="export">⬇️ Exportar JSON</button>
-          <label class="fileBtn secondary" data-permission="import">
+          <button id="btnNew" class="secondary" type="button">➕ Nuevo</button>
+          <button id="btnSave" class="primary" type="button">💾 Guardar</button>
+          <button id="btnExport" class="secondary" type="button">⬇️ Exportar JSON</button>
+          <label class="fileBtn secondary">
             ⬆️ Importar JSON
-            <input id="fileImport" type="file" accept=".json,application/json" data-permission="import" />
+            <input id="fileImport" type="file" accept=".json,application/json" />
           </label>
         </div>
 
@@ -97,8 +97,8 @@
       </div>
 
       <div class="row wrap">
-        <button id="inv_addRow" class="secondary" type="button" data-permission="edit">➕ Agregar fila</button>
-        <button id="inv_clear" class="secondary" type="button" data-permission="edit">🧹 Limpiar tabla</button>
+        <button id="inv_addRow" class="secondary" type="button">➕ Agregar fila</button>
+        <button id="inv_clear" class="secondary" type="button">🧹 Limpiar tabla</button>
       </div>
 
       <div class="tableWrap">
@@ -127,16 +127,16 @@
 
       <h3>Checklist</h3>
       <div class="checkgrid">
-        <label><input type="checkbox" id="mech_chk_oil" data-permission="edit" /> Aceite</label>
-        <label><input type="checkbox" id="mech_chk_tires" data-permission="edit" /> Llantas</label>
-        <label><input type="checkbox" id="mech_chk_brakes" data-permission="edit" /> Frenos</label>
-        <label><input type="checkbox" id="mech_chk_lights" data-permission="edit" /> Luces</label>
-        <label><input type="checkbox" id="mech_chk_battery" data-permission="edit" /> Batería</label>
-        <label><input type="checkbox" id="mech_chk_fluids" data-permission="edit" /> Fluidos</label>
+        <label><input type="checkbox" id="mech_chk_oil" /> Aceite</label>
+        <label><input type="checkbox" id="mech_chk_tires" /> Llantas</label>
+        <label><input type="checkbox" id="mech_chk_brakes" /> Frenos</label>
+        <label><input type="checkbox" id="mech_chk_lights" /> Luces</label>
+        <label><input type="checkbox" id="mech_chk_battery" /> Batería</label>
+        <label><input type="checkbox" id="mech_chk_fluids" /> Fluidos</label>
       </div>
 
       <label>Hallazgos / Observaciones</label>
-      <textarea id="mech_notes" rows="5" data-permission="edit"></textarea>
+      <textarea id="mech_notes" rows="5"></textarea>
     </div>
   </section>
 
@@ -152,21 +152,21 @@
 
       <div id="panelRun" class="panel active">
         <div class="grid2">
-          <div><label>Run #</label><input id="run_number" data-permission="edit" /></div>
-          <div><label>Fecha</label><input id="run_date" type="date" data-permission="edit" /></div>
-          <div><label>Hora</label><input id="run_time" type="time" data-permission="edit" /></div>
-          <div><label>Unidad</label><input id="run_unit" data-permission="edit" /></div>
-          <div><label>Paciente</label><input id="run_patient" data-permission="edit" /></div>
-          <div><label>Edad</label><input id="run_age" type="number" data-permission="edit" /></div>
+          <div><label>Run #</label><input id="run_number" /></div>
+          <div><label>Fecha</label><input id="run_date" type="date" /></div>
+          <div><label>Hora</label><input id="run_time" type="time" /></div>
+          <div><label>Unidad</label><input id="run_unit" /></div>
+          <div><label>Paciente</label><input id="run_patient" /></div>
+          <div><label>Edad</label><input id="run_age" type="number" /></div>
         </div>
         <label>Descripción</label>
-        <textarea id="run_desc" rows="6" data-permission="edit"></textarea>
+        <textarea id="run_desc" rows="6"></textarea>
       </div>
 
       <div id="panelVitals" class="panel">
         <div class="row wrap">
-          <button id="vit_addRow" class="secondary" type="button" data-permission="edit">➕ Agregar toma</button>
-          <button id="vit_clear" class="secondary" type="button" data-permission="edit">🧹 Limpiar</button>
+          <button id="vit_addRow" class="secondary" type="button">➕ Agregar toma</button>
+          <button id="vit_clear" class="secondary" type="button">🧹 Limpiar</button>
         </div>
         <div class="tableWrap">
           <table id="vit_table">
