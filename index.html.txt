@@ -52,6 +52,7 @@
     <main class="main">
       <header class="topbar">
         <div class="topLeft">
+          <button id="btnBack" class="backBtn hidden" type="button">← Menú</button>
           <div class="h1" id="viewTitle">📦 Inventario de ambulancia</div>
           <div class="h2" id="viewSub">Formulario editable. Guarda localmente en el navegador.</div>
         </div>

@@ -217,3 +217,50 @@ textarea{resize:vertical}
   display:none;
   max-width:360px;
 }
+
+
+
+/* ===== Mobile navigation (Menu <-> Content) ===== */
+.backBtn{
+  appearance:none;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  padding:10px 12px;
+  border-radius:12px;
+  cursor:pointer;
+  font-weight:700;
+  margin-bottom:10px;
+  width: fit-content;
+}
+.backBtn:active{ transform: translateY(1px); }
+.backBtn.hidden{ display:none; }
+
+/* On small screens we treat sidebar as "Home menu" */
+@media (max-width: 900px){
+  .app.mobileMenu{
+    grid-template-columns: 1fr !important;
+  }
+  .app.mobileMenu .main{
+    display:none !important;
+  }
+  .app.mobileMenu .sidebar{
+    width:100%;
+    border-right:none;
+  }
+
+  .app.mobileContent{
+    grid-template-columns: 1fr !important;
+  }
+  .app.mobileContent .sidebar{
+    display:none !important;
+  }
+  .app.mobileContent .main{
+    display:block !important;
+    width:100%;
+  }
+
+  /* make forms breathe */
+  .main{ padding:14px !important; }
+  .topbar{ gap:12px; }
+}

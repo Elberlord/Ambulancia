@@ -4,6 +4,17 @@ const KEY = "ambulancias_registros_v1";
 const $ = (sel, el=document) => el.querySelector(sel);
 const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
 
+const isMobile = () => window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
+
+function setAppMode(mode){ // "menu" | "content"
+  const app = $(".app");
+  if(!app) return;
+  app.classList.toggle("mobileMenu", mode === "menu");
+  app.classList.toggle("mobileContent", mode === "content");
+  const back = $("#btnBack");
+  if(back) back.classList.toggle("hidden", mode !== "content");
+}
+
 const toast = (msg) => {
   const t = $("#toast");
   t.textContent = msg;
@@ -59,6 +70,36 @@ function newRecord(){
       vs:  { flight:"", paciente:"", rows: [], meds: [], note:"" }
     }
   };
+
+
+let isDirty = false;
+let autosaveTimer = null;
+
+// UI pill helper
+function setStatus(text){
+  const pill = $("#statusPill");
+  if(pill) pill.textContent = text;
+}
+
+function markDirty(){
+  isDirty = true;
+  setStatus("Cambios sin guardar");
+  scheduleAutosave();
+}
+
+function scheduleAutosave(){
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(()=> autosaveNow(), 900);
+}
+
+function autosaveNow(){
+  if(!isDirty) return;
+  setStatus("Guardando…");
+  saveCurrent({ promptName:false, silent:true });
+  isDirty = false;
+  setStatus("Guardado ✓");
+}
+
   renderAll();
   toast("Nuevo registro listo ✅");
 }
@@ -141,26 +182,41 @@ function guessSection(data){
   return "—";
 }
 
-function saveCurrent(){
+function saveCurrent(opts = { promptName:true, silent:false }){
   bindToState();
   state.data.meta.updatedAt = new Date().toISOString();
 
-  // Ask for a display name (simple prompt)
-  let displayName = state.data.meta.nombre?.trim();
+  // Nombre del registro:
+  let displayName = (state.data.meta.nombre || "").trim();
+
   if(!displayName){
-    displayName = prompt("Nombre corto para este registro (ej: A-12 2026-01-08):", "") || "";
+    if(opts.promptName){
+      displayName = prompt("Nombre corto para este registro (ej: A-12 2026-01-08):", "") || "";
+    }
+    // Si sigue vacío (o en autosave), ponemos un nombre seguro
+    if(!displayName){
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth()+1).padStart(2,"0");
+      const dd = String(d.getDate()).padStart(2,"0");
+      const hh = String(d.getHours()).padStart(2,"0");
+      const mi = String(d.getMinutes()).padStart(2,"0");
+      displayName = `Borrador ${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+    }
     state.data.meta.nombre = displayName;
   }
 
   const list = loadAll();
   const idx = list.findIndex(x=>x.id === state.currentId);
-  const payload = { id: state.currentId, name: displayName || "Registro sin nombre", data: state.data };
+  const payload = { id: state.currentId, name: displayName, data: state.data };
+
   if(idx >= 0) list[idx] = payload;
   else list.push(payload);
 
   saveAll(list);
   renderSavedList();
-  toast("Guardado ✅");
+
+  if(!opts.silent) toast("Guardado ✅");
 }
 
 function openRecord(id){
@@ -315,7 +371,14 @@ function setupNav(){
       $$(".navBtn").forEach(b=> b.classList.remove("active"));
       btn.classList.add("active");
       const view = btn.dataset.view;
+
+      // In mobile we behave like an app: Menu -> Content
+      if(isMobile()){
+        history.pushState({screen:"content", view}, "", `#${view}`);
+        setAppMode("content");
+      }
       showView(view);
+      window.scrollTo(0,0);
     });
   });
 
@@ -331,6 +394,8 @@ function setupNav(){
 }
 
 function showView(view){
+  // Antes de cambiar de pantalla, auto-guardamos si hay cambios
+  if(isDirty) autosaveNow();
   $("#view-inventario").classList.toggle("hidden", view !== "inventario");
   $("#view-mecanica").classList.toggle("hidden", view !== "mecanica");
   $("#view-expediente").classList.toggle("hidden", view !== "expediente");
@@ -345,6 +410,17 @@ function showView(view){
 }
 
 function setupButtons(){
+  const back = $("#btnBack");
+  if(back){
+    back.onclick = () => {
+      // go back to menu in one tap
+      if(isMobile()){
+        history.pushState({screen:"menu"}, "", location.pathname + location.search);
+        setAppMode("menu");
+      }
+      window.scrollTo(0,0);
+    };
+  }
   $("#btnNuevo").onclick = newRecord;
   $("#btnGuardar").onclick = saveCurrent;
   $("#btnImprimir").onclick = ()=> window.print();
@@ -388,10 +464,24 @@ function setupButtons(){
   };
 
   // update pill on any input
-  document.addEventListener("input", ()=>{
-    $("#statusPill").textContent = "Editando…";
-    clearTimeout(setupButtons._tm);
-    setupButtons._tm = setTimeout(()=> $("#statusPill").textContent = "Listo", 600);
+  
+  // Auto-guardado anti-olvido 😅
+  document.addEventListener("input", (e)=>{
+    // Ignora inputs del file chooser si existieran
+    if(e?.target?.type === "file") return;
+    markDirty();
+  });
+  document.addEventListener("change", (e)=>{
+    if(e?.target?.type === "file") return;
+    // checkboxes/selects también cuentan
+    markDirty();
+  });
+
+  // Si intentan salir con cambios sin guardar, avisamos
+  window.addEventListener("beforeunload", (e)=>{
+    if(!isDirty) return;
+    e.preventDefault();
+    e.returnValue = "";
   });
 }
 
@@ -406,6 +496,40 @@ function escapeHtml(s){
   setupNav();
   setupButtons();
   newRecord(); // start fresh
+
+  const allowed = new Set(["inventario","mecanica","expediente"]);
+  const hashView = (location.hash || "").replace("#","").trim();
+  const initialView = allowed.has(hashView) ? hashView : "inventario";
+
+  // Mark active nav button
+  $$(".navBtn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.view === initialView);
+  });
+
+  showView(initialView);
+
+  // Mobile starts on Menu unless a deep-link hash was provided
+  if(isMobile()){
+    setAppMode(allowed.has(hashView) ? "content" : "menu");
+  } else {
+    setAppMode("content");
+  }
+
+  // Back/forward navigation support
+  window.addEventListener("popstate", ()=>{
+    const hv = (location.hash || "").replace("#","").trim();
+    if(isMobile()){
+      if(allowed.has(hv)){
+        setAppMode("content");
+        showView(hv);
+        $$(".navBtn").forEach(b=> b.classList.toggle("active", b.dataset.view === hv));
+      } else {
+        setAppMode("menu");
+      }
+      window.scrollTo(0,0);
+    }
+  });
+
   // Try auto-load last saved item if exists
   const list = loadAll();
   if(list.length){
