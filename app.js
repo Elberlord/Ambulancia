@@ -1,544 +1,588 @@
-// Ambulancias MVP (sin servidor): LocalStorage + formularios
-const KEY = "ambulancias_registros_v1";
+// Firebase Auth + Roles + Firestore + Autosave
+// IMPORTANTE: Reemplaza firebaseConfig (REPLACE_ME) con los datos de tu proyecto Firebase.
 
-const $ = (sel, el=document) => el.querySelector(sel);
-const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+import {
+  getAuth, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, collection, query, orderBy, limit,
+  getDocs, serverTimestamp, enableIndexedDbPersistence
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
 
-const isMobile = () => window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
-
-function setAppMode(mode){ // "menu" | "content"
-  const app = $(".app");
-  if(!app) return;
-  app.classList.toggle("mobileMenu", mode === "menu");
-  app.classList.toggle("mobileContent", mode === "content");
-  const back = $("#btnBack");
-  if(back) back.classList.toggle("hidden", mode !== "content");
-}
-
-const toast = (msg) => {
-  const t = $("#toast");
-  t.textContent = msg;
-  t.style.display = "block";
-  clearTimeout(toast._tm);
-  toast._tm = setTimeout(()=> t.style.display="none", 2500);
+// Config real del proyecto Firebase (Ambulancias)
+const firebaseConfig = {
+  apiKey: "AIzaSyC3L0qi5SW8qwIy4jcCGfyebjmYtgkqT7w",
+  authDomain: "ambulancias12.firebaseapp.com",
+  projectId: "ambulancias12",
+  storageBucket: "ambulancias12.firebasestorage.app",
+  messagingSenderId: "992244158421",
+  appId: "1:992244158421:web:a620ea0179a6d92affb75c",
 };
 
-const state = {
-  currentId: null,
-  data: {
-    meta: { nombre:"", createdAt: null, updatedAt: null },
-    inv: { unidad:"", fecha:"", responsable:"", turno:"", obs:"", rows: [] },
-    mec: { unidad:"", fecha:"", km:"", tecnico:"", estado:"", checks:{}, hallazgos:"" },
-    exp: {
-      run: { fecha:"", paciente:"", edad:"", sexo:"", dx:"", nota:"" },
-      vs:  { flight:"", paciente:"", rows: [], meds: [], note:"" }
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// Offline persistence (best effort)
+enableIndexedDbPersistence(db).catch(() => {});
+
+// ---------- Helpers ----------
+const $ = (id) => document.getElementById(id);
+const pill = $("savePill");
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;").replaceAll("<","&lt;")
+    .replaceAll(">","&gt;").replaceAll('"',"&quot;");
+}
+
+function setPill(state){
+  pill.classList.remove("good","warn","bad");
+  if(state === "dirty"){ pill.textContent = "Cambios sin guardar"; pill.classList.add("warn"); }
+  else if(state === "saving"){ pill.textContent = "Guardando…"; pill.classList.add("warn"); }
+  else if(state === "saved"){ pill.textContent = "Guardado ✓"; pill.classList.add("good"); }
+  else if(state === "readonly"){ pill.textContent = "Solo lectura"; pill.classList.add("bad"); }
+  else { pill.textContent = "Listo"; }
+}
+
+function toast(msg){
+  const el = $("authMsg");
+  if(!el) return;
+  el.textContent = msg || "";
+}
+
+function showView(name){
+  ["viewAuth","viewHome","viewInventario","viewMecanica","viewExpediente"].forEach(v => $(v).classList.remove("active"));
+  $(name).classList.add("active");
+  $("btnBack").classList.toggle("hidden", name === "viewHome");
+}
+
+function goHome(){ showView("viewHome"); history.pushState({view:"home"}, "", "#home"); }
+function goSection(section){
+  const map = { inventario:"viewInventario", mecanica:"viewMecanica", expediente:"viewExpediente" };
+  showView(map[section] || "viewHome");
+  history.pushState({view:section}, "", `#${section}`);
+}
+
+// Back
+$("btnBack").addEventListener("click", () => history.back());
+window.addEventListener("popstate", (e) => {
+  const v = (e.state && e.state.view) || (location.hash || "#home").replace("#","");
+  if(v === "inventario") showView("viewInventario");
+  else if(v === "mecanica") showView("viewMecanica");
+  else if(v === "expediente") showView("viewExpediente");
+  else showView("viewHome");
+});
+
+// ---------- Role model ----------
+let currentUser = null;
+let currentRole = null;           // admin | operador | lector
+let currentRecordId = null;
+let currentRecordMeta = null;     // {name,...}
+let dirty = false;
+let saving = false;
+let saveTimer = null;
+
+function canEdit(){ return currentRole === "admin" || currentRole === "operador"; }
+
+function applyPermissions(){
+  const editable = canEdit();
+
+  // Always allow: logout/back/nav/tabs/refresh/export
+  const allowIds = new Set([
+    "btnLogout","btnBack",
+    "navInventario","navMecanica","navExpediente",
+    "tabRun","tabVitals",
+    "btnRefresh","btnExport","search"
+  ]);
+
+  document.querySelectorAll("input,textarea,select,button").forEach(el => {
+    if(allowIds.has(el.id)) return;
+
+    // Import only if can edit
+    if(el.id === "fileImport" || el.closest?.(".fileBtn")){
+      if(!editable) el.setAttribute("disabled","disabled"); else el.removeAttribute("disabled");
+      return;
     }
+
+    // Record action buttons always clickable (open). Others handled when created.
+    if(el.classList.contains("smallbtn")) return;
+
+    if(editable){
+      el.removeAttribute("disabled");
+      el.removeAttribute("readonly");
+    } else {
+      if(el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT"){
+        el.setAttribute("readonly","readonly");
+      } else if(el.tagName === "BUTTON") {
+        el.setAttribute("disabled","disabled");
+      }
+    }
+  });
+
+  setPill(editable ? "saved" : "readonly");
+}
+
+// ---------- Tabs ----------
+$("tabRun").addEventListener("click", () => {
+  $("tabRun").classList.add("active"); $("tabVitals").classList.remove("active");
+  $("panelRun").classList.add("active"); $("panelVitals").classList.remove("active");
+});
+$("tabVitals").addEventListener("click", () => {
+  $("tabVitals").classList.add("active"); $("tabRun").classList.remove("active");
+  $("panelVitals").classList.add("active"); $("panelRun").classList.remove("active");
+});
+
+// ---------- Tables ----------
+function addInvRow(row={item:"",qty:"",state:"",exp:"",notes:""}){
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input class="inv_item" value="${esc(row.item)}"></td>
+    <td><input class="inv_qty" value="${esc(row.qty)}"></td>
+    <td><input class="inv_state" value="${esc(row.state)}"></td>
+    <td><input class="inv_exp" type="date" value="${esc(row.exp)}"></td>
+    <td><input class="inv_notes" value="${esc(row.notes)}"></td>
+    <td><button type="button" class="secondary inv_del">✖</button></td>
+  `;
+  tr.querySelector(".inv_del").addEventListener("click", () => { tr.remove(); markDirty(); });
+  $("inv_table").querySelector("tbody").appendChild(tr);
+}
+function addVitRow(row={time:"",bp:"",hr:"",rr:"",spo2:"",temp:"",gcs:""}){
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input class="vit_time" type="time" value="${esc(row.time)}"></td>
+    <td><input class="vit_bp" value="${esc(row.bp)}"></td>
+    <td><input class="vit_hr" value="${esc(row.hr)}"></td>
+    <td><input class="vit_rr" value="${esc(row.rr)}"></td>
+    <td><input class="vit_spo2" value="${esc(row.spo2)}"></td>
+    <td><input class="vit_temp" value="${esc(row.temp)}"></td>
+    <td><input class="vit_gcs" value="${esc(row.gcs)}"></td>
+    <td><button type="button" class="secondary vit_del">✖</button></td>
+  `;
+  tr.querySelector(".vit_del").addEventListener("click", () => { tr.remove(); markDirty(); });
+  $("vit_table").querySelector("tbody").appendChild(tr);
+}
+
+$("inv_addRow").addEventListener("click", () => { addInvRow(); markDirty(); });
+$("inv_clear").addEventListener("click", () => {
+  if(confirm("¿Limpiar toda la tabla de inventario?")){
+    $("inv_table").querySelector("tbody").innerHTML = "";
+    markDirty();
   }
-};
+});
+$("vit_addRow").addEventListener("click", () => { addVitRow(); markDirty(); });
+$("vit_clear").addEventListener("click", () => {
+  if(confirm("¿Limpiar todas las tomas?")){
+    $("vit_table").querySelector("tbody").innerHTML = "";
+    markDirty();
+  }
+});
 
-let isDirty = false;
-let autosaveTimer = null;
+// ---------- Auth ----------
+$("btnLogin").addEventListener("click", async () => {
+  const email = $("authEmail").value.trim();
+  const pass = $("authPass").value;
+  toast("");
+  try{
+    await signInWithEmailAndPassword(auth, email, pass);
+  }catch(e){
+    toast("Error: " + (e?.message || "No se pudo iniciar sesión."));
+  }
+});
 
-// UI pill helper
-function setStatus(text){
-  const pill = $("#statusPill");
-  if(pill) pill.textContent = text;
+$("btnForgot").addEventListener("click", async () => {
+  const email = $("authEmail").value.trim();
+  if(!email) return toast("Escribe tu email primero.");
+  try{
+    await sendPasswordResetEmail(auth, email);
+    toast("Listo. Revisa tu correo para restablecer la contraseña.");
+  }catch(e){
+    toast("Error: " + (e?.message || "No se pudo enviar el correo."));
+  }
+});
+
+$("btnLogout").addEventListener("click", async () => {
+  await signOut(auth);
+});
+
+onAuthStateChanged(auth, async (user) => {
+  currentUser = user;
+  currentRole = null;
+  currentRecordId = null;
+  currentRecordMeta = null;
+  dirty = false;
+
+  if(!user){
+    $("btnLogout").classList.add("hidden");
+    showView("viewAuth");
+    setPill("idle");
+    return;
+  }
+
+  $("btnLogout").classList.remove("hidden");
+
+  // Load role from users/{uid}
+  const uref = doc(db, "users", user.uid);
+  const usnap = await getDoc(uref);
+  if(!usnap.exists()){
+    // first login: create as lector
+    await setDoc(uref, { email: user.email || "", role: "lector", createdAt: serverTimestamp() }, { merge:true });
+    currentRole = "lector";
+  } else {
+    currentRole = usnap.data().role || "lector";
+  }
+
+  applyPermissions();
+  await refreshRecords();
+  showView("viewHome");
+  history.replaceState({view:"home"}, "", "#home");
+});
+
+// ---------- Navigation ----------
+$("navInventario").addEventListener("click", async () => { await preNavSave(); goSection("inventario"); });
+$("navMecanica").addEventListener("click", async () => { await preNavSave(); goSection("mecanica"); });
+$("navExpediente").addEventListener("click", async () => { await preNavSave(); goSection("expediente"); });
+
+async function preNavSave(){
+  if(dirty && canEdit()) await saveCurrentRecord(true);
 }
 
-function markDirty(){
-  isDirty = true;
-  setStatus("Cambios sin guardar");
-  scheduleAutosave();
+// ---------- Record data mapping ----------
+function buildRecordDataFromUI(){
+  const invRows = [...$("inv_table").querySelectorAll("tbody tr")].map(tr => ({
+    item: tr.querySelector(".inv_item")?.value || "",
+    qty: tr.querySelector(".inv_qty")?.value || "",
+    state: tr.querySelector(".inv_state")?.value || "",
+    exp: tr.querySelector(".inv_exp")?.value || "",
+    notes: tr.querySelector(".inv_notes")?.value || "",
+  }));
+
+  const vitRows = [...$("vit_table").querySelectorAll("tbody tr")].map(tr => ({
+    time: tr.querySelector(".vit_time")?.value || "",
+    bp: tr.querySelector(".vit_bp")?.value || "",
+    hr: tr.querySelector(".vit_hr")?.value || "",
+    rr: tr.querySelector(".vit_rr")?.value || "",
+    spo2: tr.querySelector(".vit_spo2")?.value || "",
+    temp: tr.querySelector(".vit_temp")?.value || "",
+    gcs: tr.querySelector(".vit_gcs")?.value || "",
+  }));
+
+  return {
+    inventario: {
+      unit: $("inv_unit").value || "",
+      date: $("inv_date").value || "",
+      resp: $("inv_resp").value || "",
+      shift: $("inv_shift").value || "",
+      rows: invRows,
+    },
+    mecanica: {
+      unit: $("mech_unit").value || "",
+      date: $("mech_date").value || "",
+      km: $("mech_km").value || "",
+      resp: $("mech_resp").value || "",
+      chk: {
+        oil: $("mech_chk_oil").checked,
+        tires: $("mech_chk_tires").checked,
+        brakes: $("mech_chk_brakes").checked,
+        lights: $("mech_chk_lights").checked,
+        battery: $("mech_chk_battery").checked,
+        fluids: $("mech_chk_fluids").checked,
+      },
+      notes: $("mech_notes").value || "",
+    },
+    expediente: {
+      run: {
+        number: $("run_number").value || "",
+        date: $("run_date").value || "",
+        time: $("run_time").value || "",
+        unit: $("run_unit").value || "",
+        patient: $("run_patient").value || "",
+        age: $("run_age").value || "",
+        desc: $("run_desc").value || "",
+      },
+      vitals: vitRows,
+    }
+  };
 }
 
-function scheduleAutosave(){
-  clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(()=> autosaveNow(), 900);
+function loadUIFromRecordData(data){
+  data = data || {};
+  const inv = data.inventario || {};
+  $("inv_unit").value = inv.unit || "";
+  $("inv_date").value = inv.date || "";
+  $("inv_resp").value = inv.resp || "";
+  $("inv_shift").value = inv.shift || "";
+  $("inv_table").querySelector("tbody").innerHTML = "";
+  (inv.rows || []).forEach(addInvRow);
+
+  const mech = data.mecanica || {};
+  $("mech_unit").value = mech.unit || "";
+  $("mech_date").value = mech.date || "";
+  $("mech_km").value = mech.km || "";
+  $("mech_resp").value = mech.resp || "";
+  $("mech_notes").value = mech.notes || "";
+  const chk = mech.chk || {};
+  $("mech_chk_oil").checked = !!chk.oil;
+  $("mech_chk_tires").checked = !!chk.tires;
+  $("mech_chk_brakes").checked = !!chk.brakes;
+  $("mech_chk_lights").checked = !!chk.lights;
+  $("mech_chk_battery").checked = !!chk.battery;
+  $("mech_chk_fluids").checked = !!chk.fluids;
+
+  const exp = data.expediente || {};
+  const run = exp.run || {};
+  $("run_number").value = run.number || "";
+  $("run_date").value = run.date || "";
+  $("run_time").value = run.time || "";
+  $("run_unit").value = run.unit || "";
+  $("run_patient").value = run.patient || "";
+  $("run_age").value = run.age || "";
+  $("run_desc").value = run.desc || "";
+  $("vit_table").querySelector("tbody").innerHTML = "";
+  (exp.vitals || []).forEach(addVitRow);
 }
 
-function autosaveNow(){
-  if(!isDirty) return;
-  setStatus("Guardando…");
-  saveCurrent({ promptName:false, silent:true });
-  isDirty = false;
-  setStatus("Guardado ✓");
-}
-
-const mecItems = [
-  ["Aceite motor", "Nivel y fugas"],
-  ["Refrigerante", "Nivel y mangueras"],
-  ["Frenos", "Pedal, líquido, fugas"],
-  ["Llantas", "Presión y desgaste"],
-  ["Luces", "Bajas/altas/stop/direccionales"],
-  ["Batería", "Carga y bornes"],
-  ["Sirena / Baliza", "Funcionamiento"],
-  ["Suspensión", "Ruidos, estabilidad"],
-  ["Dirección", "Holguras, alineación"],
-  ["Combustible", "Nivel y fugas"],
-  ["Limpia parabrisas", "Plumillas y líquido"],
-  ["Aire A/C", "Enfría / calienta"],
-];
-
-function loadAll(){
-  try { return JSON.parse(localStorage.getItem(KEY) || "[]"); }
-  catch { return []; }
-}
-function saveAll(list){
-  localStorage.setItem(KEY, JSON.stringify(list));
+// ---------- Record actions ----------
+function suggestName(){
+  const unit = $("inv_unit").value || $("mech_unit").value || $("run_unit").value || "AMB";
+  const d = $("inv_date").value || $("mech_date").value || $("run_date").value || new Date().toISOString().slice(0,10);
+  return `${unit} ${d}`;
 }
 
 function newRecord(){
-  state.currentId = crypto.randomUUID();
-  state.data = {
-    meta: { nombre:"", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    inv: { unidad:"", fecha:"", responsable:"", turno:"", obs:"", rows: [] },
-    mec: { unidad:"", fecha:"", km:"", tecnico:"", estado:"", checks:{}, hallazgos:"" },
-    exp: {
-      run: { fecha:"", paciente:"", edad:"", sexo:"", dx:"", nota:"" },
-      vs:  { flight:"", paciente:"", rows: [], meds: [], note:"" }
-    }
-  };
-
-  // Estado de auto-guardado
-  isDirty = false;
-  setStatus("Guardado ✓");
-
-  renderAll();
-  toast("Nuevo registro listo ✅");
+  currentRecordId = null;
+  currentRecordMeta = null;
+  loadUIFromRecordData({});
+  dirty = false;
+  setPill(canEdit() ? "saved" : "readonly");
 }
 
-function getBindEl(){
-  return $$("[data-bind]");
-}
+$("btnNew").addEventListener("click", async () => {
+  await preNavSave();
+  newRecord();
+});
 
-function bindToState(){
-  getBindEl().forEach(inp=>{
-    const path = inp.getAttribute("data-bind");
-    const v = (inp.type === "checkbox") ? inp.checked : inp.value;
-    setPath(state.data, path, v);
-  });
-  // tables already update state directly
-}
+$("btnSave").addEventListener("click", async () => {
+  await saveCurrentRecord(false);
+});
 
-function renderBinds(){
-  getBindEl().forEach(inp=>{
-    const path = inp.getAttribute("data-bind");
-    const v = getPath(state.data, path) ?? "";
-    if(inp.type === "checkbox") inp.checked = !!v;
-    else inp.value = v;
-  });
-}
-
-function setPath(obj, path, value){
-  const parts = path.split(".");
-  let cur = obj;
-  for(let i=0;i<parts.length-1;i++){
-    if(!(parts[i] in cur)) cur[parts[i]] = {};
-    cur = cur[parts[i]];
-  }
-  cur[parts[parts.length-1]] = value;
-}
-function getPath(obj, path){
-  return path.split(".").reduce((a,k)=> (a && a[k]!=null)?a[k]:undefined, obj);
-}
-
-function renderSavedList(){
-  const list = loadAll();
-  const box = $("#savedList");
-  box.innerHTML = "";
-  if(!list.length){
-    box.innerHTML = '<div class="muted">Aún no hay registros guardados.</div>';
+async function saveCurrentRecord(silent){
+  if(!canEdit()){
+    if(!silent) alert("Tu usuario es solo lectura. No puedes guardar cambios.");
     return;
   }
-  list
-    .sort((a,b)=> (b.data?.meta?.updatedAt||"").localeCompare(a.data?.meta?.updatedAt||""))
-    .forEach(item=>{
-      const div = document.createElement("div");
-      div.className = "savedItem";
-      const name = item.name || "Registro sin nombre";
-      const meta = item.data?.meta || {};
-      const when = (meta.updatedAt || meta.createdAt || "").replace("T"," ").slice(0,16);
-      div.innerHTML = `
-        <div class="savedItemTop">
-          <div class="savedName">${escapeHtml(name)}</div>
-          <div class="pill">${when || "—"}</div>
-        </div>
-        <div class="savedMeta">ID: ${item.id.slice(0,8)} · Sección: ${guessSection(item.data)}</div>
-        <div class="savedActions">
-          <button class="btn primary" data-act="open" data-id="${item.id}">Abrir</button>
-          <button class="btn" data-act="dup" data-id="${item.id}">Duplicar</button>
-          <button class="btn danger" data-act="del" data-id="${item.id}">Eliminar</button>
-        </div>
-      `;
-      box.appendChild(div);
-    });
+  if(saving) return;
+  saving = true;
+  setPill("saving");
 
-  $$("[data-act='open']").forEach(b=> b.onclick = ()=> openRecord(b.dataset.id));
-  $$("[data-act='dup']").forEach(b=> b.onclick = ()=> duplicateRecord(b.dataset.id));
-  $$("[data-act='del']").forEach(b=> b.onclick = ()=> deleteRecord(b.dataset.id));
-}
+  const nameDefault = suggestName();
+  let name = currentRecordMeta?.name || nameDefault;
 
-function guessSection(data){
-  if(data?.inv?.unidad || data?.inv?.rows?.length) return "Inventario";
-  if(data?.mec?.unidad || Object.keys(data?.mec?.checks||{}).length) return "Mecánica";
-  if(data?.exp?.run?.paciente || data?.exp?.vs?.rows?.length) return "Expediente";
-  return "—";
-}
-
-function saveCurrent(opts = { promptName:true, silent:false }){
-  bindToState();
-  state.data.meta.updatedAt = new Date().toISOString();
-
-  // Nombre del registro:
-  let displayName = (state.data.meta.nombre || "").trim();
-
-  if(!displayName){
-    if(opts.promptName){
-      displayName = prompt("Nombre corto para este registro (ej: A-12 2026-01-08):", "") || "";
+  if(!silent){
+    name = (prompt("Nombre del registro:", name) || name).trim();
+    if(!name){
+      saving = false;
+      setPill("dirty");
+      return;
     }
-    // Si sigue vacío (o en autosave), ponemos un nombre seguro
-    if(!displayName){
-      const d = new Date();
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth()+1).padStart(2,"0");
-      const dd = String(d.getDate()).padStart(2,"0");
-      const hh = String(d.getHours()).padStart(2,"0");
-      const mi = String(d.getMinutes()).padStart(2,"0");
-      displayName = `Borrador ${yyyy}-${mm}-${dd} ${hh}:${mi}`;
-    }
-    state.data.meta.nombre = displayName;
   }
 
-  const list = loadAll();
-  const idx = list.findIndex(x=>x.id === state.currentId);
-  const payload = { id: state.currentId, name: displayName, data: state.data };
+  const data = buildRecordDataFromUI();
 
-  if(idx >= 0) list[idx] = payload;
-  else list.push(payload);
-
-  saveAll(list);
-  renderSavedList();
-
-  if(!opts.silent) toast("Guardado ✅");
-}
-
-function openRecord(id){
-  const list = loadAll();
-  const item = list.find(x=>x.id === id);
-  if(!item){ toast("No encontré ese registro."); return; }
-  state.currentId = item.id;
-  state.data = item.data;
-  renderAll();
-  toast("Registro abierto ✅");
-}
-
-function duplicateRecord(id){
-  const list = loadAll();
-  const item = list.find(x=>x.id === id);
-  if(!item){ toast("No encontré ese registro."); return; }
-  const copy = structuredClone(item);
-  copy.id = crypto.randomUUID();
-  copy.name = (item.name || "Registro") + " (copia)";
-  copy.data.meta = copy.data.meta || {};
-  copy.data.meta.createdAt = new Date().toISOString();
-  copy.data.meta.updatedAt = new Date().toISOString();
-  list.push(copy);
-  saveAll(list);
-  renderSavedList();
-  toast("Duplicado ✅");
-}
-
-function deleteRecord(id){
-  if(!confirm("¿Eliminar este registro?")) return;
-  const list = loadAll().filter(x=>x.id !== id);
-  saveAll(list);
-  renderSavedList();
-  toast("Eliminado 🗑️");
-}
-
-function exportJSON(){
-  bindToState();
-  const blob = new Blob([JSON.stringify({ id: state.currentId, data: state.data }, null, 2)], {type:"application/json"});
-  const a = document.createElement("a");
-  const name = (state.data.meta.nombre || "registro").replace(/[^a-z0-9_-]+/gi,"_");
-  a.href = URL.createObjectURL(blob);
-  a.download = `ambulancia_${name}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-function importJSON(file){
-  const fr = new FileReader();
-  fr.onload = () => {
-    try{
-      const obj = JSON.parse(fr.result);
-      state.currentId = obj.id || crypto.randomUUID();
-      state.data = obj.data || obj;
-      if(!state.data.meta) state.data.meta = { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-      renderAll();
-      toast("Importado ✅ (guardá para persistir)");
-    }catch(e){
-      console.error(e);
-      toast("JSON inválido ❌");
+  try{
+    if(!currentRecordId){
+      const ref = await addDoc(collection(db, "records"), {
+        name,
+        data,
+        ownerUid: currentUser.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      currentRecordId = ref.id;
+      currentRecordMeta = { name };
+    } else {
+      await updateDoc(doc(db, "records", currentRecordId), {
+        name,
+        data,
+        updatedAt: serverTimestamp(),
+      });
+      currentRecordMeta = { name };
     }
-  };
-  fr.readAsText(file);
+
+    dirty = false;
+    setPill("saved");
+    await refreshRecords();
+  } catch(e){
+    console.error(e);
+    setPill("bad");
+    if(!silent) alert("No se pudo guardar. Revisa tu conexión o permisos.");
+  } finally {
+    saving = false;
+  }
 }
 
-function renderChecks(){
-  const wrap = $("#mecChecks");
-  wrap.innerHTML = "";
-  mecItems.forEach(([label, desc])=>{
-    const key = label;
-    const id = "chk_" + label.replace(/\W+/g,"_");
-    const div = document.createElement("div");
-    div.className = "check";
-    div.innerHTML = `
-      <input type="checkbox" id="${id}" />
-      <div>
-        <div class="label">${escapeHtml(label)}</div>
-        <div class="desc">${escapeHtml(desc)}</div>
+async function refreshRecords(){
+  if(!currentUser) return;
+  const list = $("recordsList");
+  list.innerHTML = "<div class='muted'>Cargando…</div>";
+
+  const q = query(collection(db, "records"), orderBy("updatedAt","desc"), limit(50));
+  const snap = await getDocs(q);
+
+  const term = ($("search").value || "").toLowerCase();
+  const items = [];
+  snap.forEach(docu => {
+    const d = docu.data();
+    if(term && !(d.name || "").toLowerCase().includes(term)) return;
+    items.push({ id: docu.id, ...d });
+  });
+
+  if(items.length === 0){
+    list.innerHTML = "<div class='muted'>Sin registros.</div>";
+    return;
+  }
+
+  list.innerHTML = "";
+  items.forEach(r => {
+    const card = document.createElement("div");
+    card.className = "record";
+    const updated = r.updatedAt?.toDate ? r.updatedAt.toDate().toLocaleString() : "";
+    card.innerHTML = `
+      <div class="meta">
+        <div>
+          <div class="name">${esc(r.name || "(sin nombre)")}</div>
+          <div class="sub">Actualizado: ${esc(updated)}</div>
+        </div>
+        <div class="sub">ID: ${esc(r.id)}</div>
+      </div>
+      <div class="actions">
+        <button class="smallbtn" data-act="open" type="button">Abrir</button>
+        <button class="smallbtn" data-act="dup" type="button">Duplicar</button>
+        <button class="smallbtn" data-act="del" type="button">Eliminar</button>
       </div>
     `;
-    const cb = div.querySelector("input");
-    cb.checked = !!state.data.mec.checks[key];
-    cb.addEventListener("change", ()=>{
-      state.data.mec.checks[key] = cb.checked;
+
+    const btnOpen = card.querySelector('[data-act="open"]');
+    const btnDup  = card.querySelector('[data-act="dup"]');
+    const btnDel  = card.querySelector('[data-act="del"]');
+
+    btnOpen.addEventListener("click", async () => {
+      await preNavSave();
+      await openRecord(r.id);
     });
-    wrap.appendChild(div);
-  });
-}
 
-function makeRowInput(value, onChange){
-  const inp = document.createElement("input");
-  inp.value = value ?? "";
-  inp.addEventListener("input", ()=> onChange(inp.value));
-  return inp;
-}
-
-function renderTable(tableId, rows, columns, onRemove){
-  const tbody = $(tableId + " tbody");
-  tbody.innerHTML = "";
-  rows.forEach((row, idx)=>{
-    const tr = document.createElement("tr");
-    columns.forEach(col=>{
-      const td = document.createElement("td");
-      td.appendChild(makeRowInput(row[col] ?? "", v=> row[col] = v));
-      tr.appendChild(td);
+    btnDup.addEventListener("click", async () => {
+      if(!canEdit()) return alert("Solo lectura. No puedes duplicar.");
+      await preNavSave();
+      await duplicateRecord(r.id);
     });
-    const tdX = document.createElement("td");
-    const x = document.createElement("button");
-    x.className = "xBtn";
-    x.textContent = "✖";
-    x.onclick = ()=> onRemove(idx);
-    tdX.appendChild(x);
-    tr.appendChild(tdX);
-    tbody.appendChild(tr);
-  });
-}
 
-function renderInventarioTable(){
-  const cols = ["item","cantidad","estado","vencimiento","notas"];
-  renderTable("#invTable", state.data.inv.rows, cols, (idx)=>{
-    state.data.inv.rows.splice(idx,1);
-    renderInventarioTable();
-  });
-}
-function renderVitalsTable(){
-  const cols = ["time","hr","rhythm","bp","map","rr","spo2","etco2","temp","pain","gcs","vtidal","rate","peep"];
-  renderTable("#vsTable", state.data.exp.vs.rows, cols, (idx)=>{
-    state.data.exp.vs.rows.splice(idx,1);
-    renderVitalsTable();
-  });
-}
-function renderMedsTable(){
-  const cols = ["time","medication","concentration","dose","route","outcome"];
-  renderTable("#medTable", state.data.exp.vs.meds, cols, (idx)=>{
-    state.data.exp.vs.meds.splice(idx,1);
-    renderMedsTable();
-  });
-}
-
-function renderAll(){
-  renderBinds();
-  renderChecks();
-  renderInventarioTable();
-  renderVitalsTable();
-  renderMedsTable();
-  renderSavedList();
-}
-
-function setupNav(){
-  $$(".navBtn").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      $$(".navBtn").forEach(b=> b.classList.remove("active"));
-      btn.classList.add("active");
-      const view = btn.dataset.view;
-
-      // In mobile we behave like an app: Menu -> Content
-      if(isMobile()){
-        history.pushState({screen:"content", view}, "", `#${view}`);
-        setAppMode("content");
-      }
-      showView(view);
-      window.scrollTo(0,0);
+    // Delete is disabled in client (rules too). Keep admin hint.
+    btnDel.addEventListener("click", () => {
+      alert("Eliminación deshabilitada en cliente por seguridad. Un admin puede borrar desde Firebase Console.");
     });
-  });
+    if(currentRole !== "admin"){
+      btnDel.style.display = "none";
+    }
+    if(!canEdit()){
+      btnDup.setAttribute("disabled","disabled");
+    }
 
-  $$(".tabBtn").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      $$(".tabBtn").forEach(b=> b.classList.remove("active"));
-      btn.classList.add("active");
-      const tab = btn.dataset.tab;
-      $("#tab-run").classList.toggle("hidden", tab !== "run");
-      $("#tab-vitals").classList.toggle("hidden", tab !== "vitals");
-    });
+    list.appendChild(card);
   });
 }
 
-function showView(view){
-  // Antes de cambiar de pantalla, auto-guardamos si hay cambios
-  if(isDirty) autosaveNow();
-  $("#view-inventario").classList.toggle("hidden", view !== "inventario");
-  $("#view-mecanica").classList.toggle("hidden", view !== "mecanica");
-  $("#view-expediente").classList.toggle("hidden", view !== "expediente");
+$("btnRefresh").addEventListener("click", refreshRecords);
+$("search").addEventListener("input", refreshRecords);
 
-  const map = {
-    inventario: ["📦 Inventario de ambulancia", "Checklist editable. Guarda en el navegador."],
-    mecanica: ["🛠️ Revisión mecánica de ambulancias", "Checklist mecánico + hallazgos."],
-    expediente: ["🗂️ Expediente y hoja de trabajo", "Dos pestañas: Run Report y Vital Signs."]
-  };
-  $("#viewTitle").textContent = map[view][0];
-  $("#viewSub").textContent = map[view][1];
+async function openRecord(id){
+  const snap = await getDoc(doc(db, "records", id));
+  if(!snap.exists()) return alert("No existe.");
+  const r = snap.data();
+  currentRecordId = id;
+  currentRecordMeta = { name: r.name || "" };
+  loadUIFromRecordData(r.data || {});
+  dirty = false;
+  setPill(canEdit() ? "saved" : "readonly");
+  goHome();
 }
 
-function setupButtons(){
-  const back = $("#btnBack");
-  if(back){
-    back.onclick = () => {
-      // go back to menu in one tap
-      if(isMobile()){
-        history.pushState({screen:"menu"}, "", location.pathname + location.search);
-        setAppMode("menu");
-      }
-      window.scrollTo(0,0);
-    };
-  }
-  $("#btnNuevo").onclick = newRecord;
-  $("#btnGuardar").onclick = saveCurrent;
-  $("#btnImprimir").onclick = ()=> window.print();
-  $("#btnExportar").onclick = exportJSON;
-  $("#btnRefresh").onclick = renderSavedList;
+async function duplicateRecord(id){
+  const snap = await getDoc(doc(db, "records", id));
+  if(!snap.exists()) return;
+  const r = snap.data();
+  currentRecordId = null;
+  currentRecordMeta = null;
+  loadUIFromRecordData(r.data || {});
+  dirty = true;
+  setPill("dirty");
+}
 
-  $("#fileImport").addEventListener("change", (e)=>{
-    const f = e.target.files?.[0];
-    if(f) importJSON(f);
-    e.target.value = "";
-  });
+// ---------- Export / Import ----------
+$("btnExport").addEventListener("click", () => {
+  const payload = {
+    id: currentRecordId || null,
+    name: currentRecordMeta?.name || suggestName(),
+    data: buildRecordDataFromUI(),
+    exportedAt: new Date().toISOString(),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (payload.name || "registro").replaceAll(/[\\/:*?"<>|]/g, "_") + ".json";
+  a.click();
+  URL.revokeObjectURL(url);
+});
 
-  $("#invAddRow").onclick = ()=>{
-    state.data.inv.rows.push({item:"", cantidad:"", estado:"", vencimiento:"", notas:""});
-    renderInventarioTable();
-  };
-  $("#invClear").onclick = ()=>{
-    if(!confirm("¿Limpiar toda la tabla de inventario?")) return;
-    state.data.inv.rows = [];
-    renderInventarioTable();
-  };
+$("fileImport").addEventListener("change", async (e) => {
+  const f = e.target.files?.[0];
+  e.target.value = "";
+  if(!f) return;
+  if(!canEdit()) return alert("Solo lectura. No puedes importar.");
 
-  $("#vsAddRow").onclick = ()=>{
-    state.data.exp.vs.rows.push({time:"",hr:"",rhythm:"",bp:"",map:"",rr:"",spo2:"",etco2:"",temp:"",pain:"",gcs:"",vtidal:"",rate:"",peep:""});
-    renderVitalsTable();
-  };
-  $("#vsClear").onclick = ()=>{
-    if(!confirm("¿Limpiar toda la tabla de vitales?")) return;
-    state.data.exp.vs.rows = [];
-    renderVitalsTable();
-  };
+  const txt = await f.text();
+  let obj;
+  try{ obj = JSON.parse(txt); }catch{ return alert("JSON inválido."); }
+  await preNavSave();
+  currentRecordId = null;
+  currentRecordMeta = null;
+  loadUIFromRecordData(obj.data || {});
+  dirty = true;
+  setPill("dirty");
+});
 
-  $("#medAddRow").onclick = ()=>{
-    state.data.exp.vs.meds.push({time:"",medication:"",concentration:"",dose:"",route:"",outcome:""});
-    renderMedsTable();
-  };
-  $("#medClear").onclick = ()=>{
-    if(!confirm("¿Limpiar toda la tabla de medicamentos?")) return;
-    state.data.exp.vs.meds = [];
-    renderMedsTable();
-  };
+// ---------- Autosave (anti-olvido) ----------
+function markDirty(){
+  if(!canEdit()) return;
+  dirty = true;
+  setPill("dirty");
+  if(saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveCurrentRecord(true), 900);
+}
 
-  // update pill on any input
-  
-  // Auto-guardado anti-olvido 😅
-  document.addEventListener("input", (e)=>{
-    // Ignora inputs del file chooser si existieran
-    if(e?.target?.type === "file") return;
-    markDirty();
-  });
-  document.addEventListener("change", (e)=>{
-    if(e?.target?.type === "file") return;
-    // checkboxes/selects también cuentan
-    markDirty();
-  });
-
-  // Si intentan salir con cambios sin guardar, avisamos
-  window.addEventListener("beforeunload", (e)=>{
-    if(!isDirty) return;
+window.addEventListener("beforeunload", (e) => {
+  if(dirty && canEdit()){
     e.preventDefault();
     e.returnValue = "";
-  });
-}
-
-function escapeHtml(s){
-  return String(s ?? "").replace(/[&<>\"']/g, m=>({
-    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-  }[m]));
-}
-
-// Boot
-(function(){
-  setupNav();
-  setupButtons();
-  newRecord(); // start fresh
-
-  const allowed = new Set(["inventario","mecanica","expediente"]);
-  const hashView = (location.hash || "").replace("#","").trim();
-  const initialView = allowed.has(hashView) ? hashView : "inventario";
-
-  // Mark active nav button
-  $$(".navBtn").forEach(b=>{
-    b.classList.toggle("active", b.dataset.view === initialView);
-  });
-
-  showView(initialView);
-
-  // Mobile starts on Menu unless a deep-link hash was provided
-  if(isMobile()){
-    setAppMode(allowed.has(hashView) ? "content" : "menu");
-  } else {
-    setAppMode("content");
   }
+});
 
-  // Back/forward navigation support
-  window.addEventListener("popstate", ()=>{
-    const hv = (location.hash || "").replace("#","").trim();
-    if(isMobile()){
-      if(allowed.has(hv)){
-        setAppMode("content");
-        showView(hv);
-        $$(".navBtn").forEach(b=> b.classList.toggle("active", b.dataset.view === hv));
-      } else {
-        setAppMode("menu");
-      }
-      window.scrollTo(0,0);
-    }
-  });
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if(!t) return;
+  if(t.closest("#viewAuth")) return;
+  if(t.id === "search") return;
+  markDirty();
+});
+document.addEventListener("change", (e) => {
+  const t = e.target;
+  if(!t) return;
+  if(t.closest("#viewAuth")) return;
+  if(t.id === "search") return;
+  markDirty();
+});
 
-  // Try auto-load last saved item if exists
-  const list = loadAll();
-  if(list.length){
-    const latest = list.sort((a,b)=> (b.data?.meta?.updatedAt||"").localeCompare(a.data?.meta?.updatedAt||""))[0];
-    if(latest?.id){
-      openRecord(latest.id);
-    }
-  }
-})();
+// ---------- Initial ----------
+showView("viewAuth");
