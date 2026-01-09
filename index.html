@@ -59,6 +59,7 @@
         <button id="navInventario" class="big">📦 Inventario de ambulancia</button>
         <button id="navMecanica" class="big">🛠️ Revisión mecánica</button>
         <button id="navExpediente" class="big">🗂️ Expediente y hoja de trabajo</button>
+        <button id="navUsers" class="big" data-permission="manage_users">👥 Usuarios</button>
       </div>
 
       <div class="card subcard">
@@ -180,6 +181,61 @@
         </div>
       </div>
 
+    </div>
+  </section>
+
+  <!-- USUARIOS / ROLES -->
+  <section id="viewUsers" class="view">
+    <div class="card">
+      <h2>👥 Usuarios y permisos</h2>
+      <p class="muted">Solo el rol <b>admin</b> puede crear usuarios y cambiar roles.</p>
+
+      <div class="card subcard">
+        <h3>Crear usuario</h3>
+        <div class="grid2">
+          <div>
+            <label>Email</label>
+            <input id="usr_email" type="email" placeholder="juanito@dominio.com" data-permission="manage_users" />
+          </div>
+          <div>
+            <label>Contraseña temporal</label>
+            <input id="usr_pass" type="text" placeholder="Temporal (ej: 123456)" data-permission="manage_users" />
+          </div>
+          <div>
+            <label>Rol</label>
+            <select id="usr_role" data-permission="manage_users">
+              <option value="user">user (normal)</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:flex-end; gap:10px">
+            <button id="btnCreateUser" class="primary" type="button" data-permission="manage_users">➕ Crear</button>
+            <button id="btnSendReset" class="secondary" type="button" data-permission="manage_users">📩 Enviar reset</button>
+          </div>
+        </div>
+        <div id="usr_msg" class="msg"></div>
+      </div>
+
+      <div class="card subcard">
+        <h3>Lista de usuarios</h3>
+        <div class="row">
+          <button id="btnUsersRefresh" class="secondary" type="button" data-permission="manage_users">Actualizar</button>
+        </div>
+        <div class="tableWrap">
+          <table id="users_table">
+            <thead>
+              <tr>
+                <th>UID</th>
+                <th>Email</th>
+                <th>Rol</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="hint muted">Tip: si cambias un rol, la persona debe cerrar sesión y volver a entrar para que se apliquen permisos en pantalla.</div>
+      </div>
     </div>
   </section>
 
