@@ -36,6 +36,34 @@ const state = {
   }
 };
 
+let isDirty = false;
+let autosaveTimer = null;
+
+// UI pill helper
+function setStatus(text){
+  const pill = $("#statusPill");
+  if(pill) pill.textContent = text;
+}
+
+function markDirty(){
+  isDirty = true;
+  setStatus("Cambios sin guardar");
+  scheduleAutosave();
+}
+
+function scheduleAutosave(){
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(()=> autosaveNow(), 900);
+}
+
+function autosaveNow(){
+  if(!isDirty) return;
+  setStatus("Guardando…");
+  saveCurrent({ promptName:false, silent:true });
+  isDirty = false;
+  setStatus("Guardado ✓");
+}
+
 const mecItems = [
   ["Aceite motor", "Nivel y fugas"],
   ["Refrigerante", "Nivel y mangueras"],
@@ -71,34 +99,9 @@ function newRecord(){
     }
   };
 
-
-let isDirty = false;
-let autosaveTimer = null;
-
-// UI pill helper
-function setStatus(text){
-  const pill = $("#statusPill");
-  if(pill) pill.textContent = text;
-}
-
-function markDirty(){
-  isDirty = true;
-  setStatus("Cambios sin guardar");
-  scheduleAutosave();
-}
-
-function scheduleAutosave(){
-  clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(()=> autosaveNow(), 900);
-}
-
-function autosaveNow(){
-  if(!isDirty) return;
-  setStatus("Guardando…");
-  saveCurrent({ promptName:false, silent:true });
+  // Estado de auto-guardado
   isDirty = false;
   setStatus("Guardado ✓");
-}
 
   renderAll();
   toast("Nuevo registro listo ✅");
